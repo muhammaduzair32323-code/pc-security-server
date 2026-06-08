@@ -40,7 +40,7 @@ from notifications import (
     send_access_notification,
     send_command_result,
 )
-from recognizer import recognize_face, embedding_to_str
+from recognizer import find_person_by_embedding, embedding_to_str
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
