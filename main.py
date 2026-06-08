@@ -177,58 +177,31 @@ def device_status(
 
 @app.post("/enroll")
 async def enroll_person(
-    device_id: str        = Form(...),
-    name:      str        = Form(...),
-    role:      str        = Form("GUEST"),
-    photo:     UploadFile = File(...),
-    db:        Session    = Depends(get_db),
-    _:         str        = Depends(verify_token),
+    device_id:    str        = Form(...),
+    name:         str        = Form(...),
+    role:         str        = Form("GUEST"),
+    embedding_str: str       = Form(...),
+    photo:        Optional[UploadFile] = File(None),
+    db:           Session    = Depends(get_db),
+    _:            str        = Depends(verify_token),
 ):
     """
-    Enroll a person from PC or mobile app.
-    Uploads photo to Cloudinary, extracts embedding, saves to DB.
+    Enroll a person from PC or mobile.
+    PC sends the embedding string (already computed locally).
+    Server stores it + optional photo to Cloudinary.
     Role: OWNER / GUEST / MONITORED
     """
-    import face_recognition
-    import numpy as np
-    from PIL import Image
-    import io
-
     if role not in ("OWNER", "GUEST", "MONITORED"):
         raise HTTPException(
             status_code=400,
             detail="Role must be OWNER, GUEST or MONITORED"
         )
 
-    # Read photo
-    photo_bytes = await photo.read()
+    photo_url = ""
+    if photo:
+        photo_bytes = await photo.read()
+        photo_url   = upload_face_photo(photo_bytes, name, device_id)
 
-    # Extract face embedding
-    img   = Image.open(io.BytesIO(photo_bytes)).convert("RGB")
-    frame = np.array(img)
-    locs  = face_recognition.face_locations(frame, model="hog")
-
-    if not locs:
-        raise HTTPException(
-            status_code=422,
-            detail="No face detected in the photo. Try a clearer image."
-        )
-
-    largest = max(locs, key=lambda l: (l[2] - l[0]) * (l[1] - l[3]))
-    encs    = face_recognition.face_encodings(frame, [largest])
-
-    if not encs:
-        raise HTTPException(
-            status_code=422,
-            detail="Could not generate face encoding."
-        )
-
-    embedding_str = embedding_to_str(encs[0])
-
-    # Upload photo to Cloudinary
-    photo_url = upload_face_photo(photo_bytes, name, device_id)
-
-    # Save to DB
     person = Person(
         device_id   = device_id,
         name        = name,
@@ -250,30 +223,22 @@ async def enroll_person(
         "photo_url": photo_url,
     }
 
-
 # ── Recognition endpoint ──────────────────────────────────────
 
 @app.post("/recognize")
 async def recognize(
-    device_id: str        = Form(...),
-    frame:     UploadFile = File(...),
-    db:        Session    = Depends(get_db),
-    _:         str        = Depends(verify_token),
+    device_id:    str = Form(...),
+    embedding_str: str = Form(...),
+    db:           Session = Depends(get_db),
+    _:            str = Depends(verify_token),
 ):
     """
-    PC sends a face frame → server returns identity + role.
-    Used for hybrid online recognition.
+    PC sends face embedding string → server finds matching person.
+    No image processing on server — pure DB lookup.
     """
-    image_bytes = await frame.read()
-    result      = recognize_face(image_bytes, device_id, db)
-
-    return {
-        "matched"   : result["matched"],
-        "name"      : result["name"],
-        "role"      : result["role"],
-        "confidence": result["confidence"],
-        "person_id" : result["person_id"],
-    }
+    from recognizer import find_person_by_embedding
+    result = find_person_by_embedding(embedding_str, device_id, db)
+    return result
 
 
 # ── Event endpoint ────────────────────────────────────────────
