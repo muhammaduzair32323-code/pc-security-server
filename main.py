@@ -377,6 +377,8 @@ def get_events(
             "snapshot_url"  : e.snapshot_url,
             "fresh_url"     : e.fresh_url,
             "audio_url"     : e.audio_url,
+            "ip_address"    : e.ip_address,
+            "hostname"      : e.hostname,
             "command_sent"  : e.command_sent,
             "notified"      : e.notified,
         }
